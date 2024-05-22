@@ -2,10 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const driveRouter = require('./controller/drive');
+const dotenv = require('dotenv');
+dotenv.config();
 
 const app = express();
-const PORT = 5000;
-const uri = 'mongodb://0.0.0.0:27017/drive';
+const PORT = process.env.PORT || 5000;
+const DB_URL = process.env.DB_URL;
 
 // Use the CORS middleware
 app.use(cors());
@@ -17,7 +19,7 @@ app.get("/", (_req, res) => {
     res.send("API Working...");
 });
 
-mongoose.connect(uri)
+mongoose.connect(DB_URL)
     .then(() => console.log("mongoDB connected"))
     .catch(err => console.log("mongoDB connection failed: ", err.message));
 

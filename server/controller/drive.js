@@ -1,14 +1,16 @@
 const { google } = require('googleapis');
 const express = require('express');
 const userModel = require('../model/user.model');
+const dotenv = require('dotenv');
+dotenv.config();
 
 const router = express.Router();
 
 // Google OAuth2 setup
 const oauth2Client = new google.auth.OAuth2(
-    "72165529139-lnjl4g81uqqqfadflk39ifa0v8pj04ko.apps.googleusercontent.com",
-    "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",
-    "http://localhost:5000/auth/google/callback"
+    process.env.CLIENT_ID,
+    process.env.CLIENT_SECRET,
+    process.env.REDIRECT_URL
 );
 
 router.get('/auth/google', (req, res) => {
@@ -46,9 +48,9 @@ router.get('/auth/google/callback', async (req, res) => {
             { upsert: true, new: true }
         );
 
-        res.redirect(`http://localhost:3000/dashboard/${user._id}`); 
+        const url = `${process.env.CLIENT_URL}/dashboard/${user._id}`
+        res.redirect(url); 
     } catch (error) {
-        console.log(error.response,"err call");
         res.status(500).json(error)
     }
     
@@ -61,14 +63,14 @@ router.post('/revoke', async (req, res) => {
         const user = await userModel.findById(userId);
 
         if (user) {
-            await oauth2Client.revokeToken(user.token.token.access_token);
+            await oauth2Client.revokeToken(user.token.access_token);
             await userModel.deleteOne({ _id: user._id});
-            res.send('Access revoked');
+            res.status(200).json({success:true, data:{message:'Access revoked'}});
         } else {
-            res.send('No token found');
+            res.status(400).json({ success: false, data:{message: 'No token found'} });
         }
     } catch (error) {
-        res.status(500).json(error)
+        res.status(500).json({success:false, data:error.message})
     }
 
 });
@@ -79,8 +81,7 @@ router.get('/analytics/:id', async (req, res) => {
     const user = await userModel.findById(id);
 
     if (!user.token) {
-        res.status(400).send('No token found');
-        return;
+        return res.status(400).send({success:false,data:{message:'No token found'}});
     }
 
     oauth2Client.setCredentials(user.token);
@@ -96,42 +97,31 @@ router.get('/analytics/:id', async (req, res) => {
         const files = response.data.files;
         const fileTypes = {};
         let totalSize = 0;
-        let publicFilesCount = 0;
-        let peopleCount = 0;
-        let sharedFilesCount = 0;
+        const uniquePeople = new Set();
 
         files.forEach(file => {
             const type = file.mimeType.split('/')[0];
             fileTypes[type] = (fileTypes[type] || 0) + 1;
             totalSize += parseInt(file.size || 0);
 
-            // Count files publicly accesible
-            const publicPermissions = file.permissions?.filter(permission => permission.type === 'anyone');
-            if (publicPermissions?.length > 0) {
-                publicFilesCount++;
-            }
-
-            // Count people who have access to the files
-            peopleCount += file.permissions?.filter(permission => permission.type === 'user').length || 0;
-
-            // Count files shared directly with other people
-            if (file.permissions?.length > 1) {
-                sharedFilesCount++;
-            }
+            file.permissions?.forEach(permission => {
+                if (permission.type === 'user' && permission.emailAddress) {
+                    uniquePeople.add(permission.emailAddress);
+                }
+            });
         });
 
-        res.json({
-            totalFiles: files.length,
-            totalSize,
-            fileTypes,
-            files,
-            publicFilesCount,
-            peopleCount,
-            sharedFilesCount,
+        res.status(200).json({
+            success: true,
+            data: {
+                totalSize,
+                fileTypes,
+                files,
+                peopleCount: uniquePeople.size
+            } 
         });
     } catch (error) {
-        console.log(error, "err an");
-        res.status(500).send(error.message);
+        res.status(500).json({success:false, data:error.message})
     }
 });
 
